@@ -46,6 +46,11 @@ impl<'a> InternalGlContext<'a> {
     }
 }
 
+/// # Safety
+///
+/// This function is unsafe because it provides direct access to the internal OpenGL context.
+/// The caller must ensure that OpenGL operations are performed safely and do not interfere
+/// with macroquad's internal state management.
 pub unsafe fn get_internal_gl<'a>() -> InternalGlContext<'a> {
     let context = get_context();
 
@@ -129,7 +134,7 @@ where
         #[cfg(feature = "backtrace")]
         let backtrace_string = format!("{:?}", backtrace::Backtrace::new());
         #[cfg(not(feature = "backtrace"))]
-        let backtrace_string = format!("Macroquad compiled without \"backtrace\" feature");
+        let backtrace_string = "Macroquad compiled without \"backtrace\" feature".to_string();
         crate::logging::error!("{}", message);
         crate::logging::error!("{}", backtrace_string);
 

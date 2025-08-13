@@ -290,13 +290,11 @@ impl World {
 
             if riding_rect.overlaps(&rider_rect) {
                 riding_actors.push(*actor);
-            } else if pushing_rect.overlaps(&actor_collider.rect())
-                && actor_collider.squished == false
-            {
+            } else if pushing_rect.overlaps(&actor_collider.rect()) && !actor_collider.squished {
                 pushing_actors.push(*actor);
             }
 
-            if pushing_rect.overlaps(&actor_collider.rect()) == false {
+            if !pushing_rect.overlaps(&actor_collider.rect()) {
                 actor_collider.squishers.remove(&solid);
                 if actor_collider.squishers.len() == 0 {
                     actor_collider.squished = false;

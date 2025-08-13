@@ -71,7 +71,7 @@ impl TextureIdSlotMap {
     fn contains_key(&self, key: TextureSlotId) -> bool {
         self.slots
             .get(key.idx as usize)
-            .map_or(false, |slot| slot.version == key.version.get())
+            .is_some_and(|slot| slot.version == key.version.get())
     }
 
     /// Inserts a value into the slot map. Returns a unique key that can be used

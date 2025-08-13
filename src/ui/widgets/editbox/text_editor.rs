@@ -9,7 +9,7 @@ struct InsertCharacter {
 }
 
 impl InsertCharacter {
-    fn new(editor: &EditboxState, _text: &mut Vec<char>, character: char) -> InsertCharacter {
+    fn new(editor: &EditboxState, _text: &mut [char], character: char) -> InsertCharacter {
         InsertCharacter {
             cursor: editor.cursor,
             character,
@@ -39,7 +39,7 @@ struct InsertString {
 }
 
 impl InsertString {
-    fn new(editor: &EditboxState, _text: &mut Vec<char>, data: Vec<char>) -> InsertString {
+    fn new(editor: &EditboxState, _text: &mut [char], data: Vec<char>) -> InsertString {
         InsertString {
             cursor: editor.cursor,
             data,
@@ -74,7 +74,7 @@ struct DeleteCharacter {
 }
 
 impl DeleteCharacter {
-    fn new(editor: &EditboxState, text: &mut Vec<char>) -> Option<DeleteCharacter> {
+    fn new(editor: &EditboxState, text: &[char]) -> Option<DeleteCharacter> {
         let character = text.get(editor.cursor as usize).copied();
 
         character.map(|character| DeleteCharacter {
@@ -106,7 +106,7 @@ struct DeleteRange {
 }
 
 impl DeleteRange {
-    fn new(text: &mut Vec<char>, (start, end): (u32, u32)) -> DeleteRange {
+    fn new(text: &[char], (start, end): (u32, u32)) -> DeleteRange {
         let min = start.min(end) as usize;
         let max = start.max(end) as usize;
 
@@ -136,18 +136,20 @@ impl Command for DeleteRange {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum ClickState {
+    #[default]
     None,
-    SelectingChars { selection_begin: u32 },
-    SelectingWords { selected_word: (u32, u32) },
-    SelectingLines { selected_line: (u32, u32) },
+    SelectingChars {
+        selection_begin: u32,
+    },
+    SelectingWords {
+        selected_word: (u32, u32),
+    },
+    SelectingLines {
+        selected_line: (u32, u32),
+    },
     Selected,
-}
-impl Default for ClickState {
-    fn default() -> ClickState {
-        ClickState::None
-    }
 }
 pub const DOUBLE_CLICK_TIME: f32 = 0.5;
 
@@ -165,7 +167,7 @@ pub struct EditboxState {
 }
 
 impl EditboxState {
-    pub fn clamp_selection<'a>(&mut self, text: &'a Vec<char>) {
+    pub fn clamp_selection(&mut self, text: &[char]) {
         if let Some((ref mut start, ref mut end)) = &mut self.selection {
             if *start >= text.len() as u32 {
                 *start = text.len() as _;
@@ -176,7 +178,7 @@ impl EditboxState {
         }
     }
 
-    pub fn selected_text<'a>(&self, text: &'a Vec<char>) -> Option<&'a [char]> {
+    pub fn selected_text<'a>(&self, text: &'a [char]) -> Option<&'a [char]> {
         if let Some((start, end)) = self.selection {
             let min = start.min(end) as usize;
             let max = start.max(end) as usize;
@@ -196,7 +198,7 @@ impl EditboxState {
             _ => false,
         }
     }
-    pub fn find_line_begin(&self, text: &Vec<char>) -> u32 {
+    pub fn find_line_begin(&self, text: &[char]) -> u32 {
         let mut line_position = 0;
         let mut cursor_tmp = self.cursor;
 
@@ -207,7 +209,7 @@ impl EditboxState {
         line_position
     }
 
-    pub fn find_line_end(&self, text: &Vec<char>) -> u32 {
+    pub fn find_line_end(&self, text: &[char]) -> u32 {
         let mut cursor_tmp = self.cursor;
         while cursor_tmp < text.len() as u32
             && text.get(cursor_tmp as usize).copied().unwrap_or('x') != '\n'
@@ -226,7 +228,7 @@ impl EditboxState {
             || character == '\"'
     }
 
-    pub fn find_word_begin(&self, text: &Vec<char>, cursor: u32) -> u32 {
+    pub fn find_word_begin(&self, text: &[char], cursor: u32) -> u32 {
         let mut cursor_tmp = cursor;
         let mut offset = 0;
 
@@ -241,7 +243,7 @@ impl EditboxState {
         offset
     }
 
-    pub fn find_word_end(&self, text: &Vec<char>, cursor: u32) -> u32 {
+    pub fn find_word_end(&self, text: &[char], cursor: u32) -> u32 {
         let mut cursor_tmp = cursor;
         let mut offset = 0;
         let mut space_skipping = false;
@@ -251,7 +253,7 @@ impl EditboxState {
             if Self::word_delimiter(current_char) || current_char == '\n' {
                 space_skipping = true;
             }
-            if space_skipping && Self::word_delimiter(current_char) == false {
+            if space_skipping && !Self::word_delimiter(current_char) {
                 break;
             }
             cursor_tmp += 1;
@@ -307,19 +309,19 @@ impl EditboxState {
         }
     }
 
-    pub fn move_cursor_next_word(&mut self, text: &Vec<char>, shift: bool) {
+    pub fn move_cursor_next_word(&mut self, text: &[char], shift: bool) {
         let next_word = self.find_word_end(text, self.cursor + 1) + 1;
         self.move_cursor(text, next_word as i32, shift);
     }
 
-    pub fn move_cursor_prev_word(&mut self, text: &Vec<char>, shift: bool) {
+    pub fn move_cursor_prev_word(&mut self, text: &[char], shift: bool) {
         if self.cursor > 1 {
             let prev_word = self.find_word_begin(text, self.cursor - 1) + 1;
             self.move_cursor(text, -(prev_word as i32), shift);
         }
     }
 
-    pub fn move_cursor(&mut self, text: &Vec<char>, dx: i32, shift: bool) {
+    pub fn move_cursor(&mut self, text: &[char], dx: i32, shift: bool) {
         let start_cursor = self.cursor;
         let mut end_cursor = start_cursor;
 
@@ -328,7 +330,7 @@ impl EditboxState {
             self.cursor = end_cursor;
         }
 
-        if shift == false {
+        if !shift {
             self.selection = None;
         }
         if shift {
@@ -341,7 +343,7 @@ impl EditboxState {
         }
     }
 
-    pub fn move_cursor_within_line(&mut self, text: &Vec<char>, dx: i32, shift: bool) {
+    pub fn move_cursor_within_line(&mut self, text: &[char], dx: i32, shift: bool) {
         assert!(dx >= 0, "not implemented");
 
         for _ in 0..dx {
@@ -354,7 +356,7 @@ impl EditboxState {
         }
     }
 
-    pub fn select_all(&mut self, text: &Vec<char>) {
+    pub fn select_all(&mut self, text: &[char]) {
         self.selection = Some((0, text.len() as u32));
         self.click_state = ClickState::None;
     }
@@ -364,7 +366,7 @@ impl EditboxState {
         self.selection = None;
     }
 
-    pub fn select_word(&mut self, text: &Vec<char>) -> (u32, u32) {
+    pub fn select_word(&mut self, text: &[char]) -> (u32, u32) {
         let to_word_begin = self.find_word_begin(text, self.cursor);
         let to_word_end = self.find_word_end(text, self.cursor);
         let new_selection = (self.cursor - to_word_begin, self.cursor + to_word_end);
@@ -373,7 +375,7 @@ impl EditboxState {
         new_selection
     }
 
-    pub fn select_line(&mut self, text: &Vec<char>) -> (u32, u32) {
+    pub fn select_line(&mut self, text: &[char]) -> (u32, u32) {
         let to_line_begin = self.find_line_begin(text);
         let to_line_end = self.find_line_end(text);
         let new_selection = (self.cursor - to_line_begin, self.cursor + to_line_end);
@@ -382,7 +384,7 @@ impl EditboxState {
         new_selection
     }
 
-    pub fn click_down(&mut self, time: f32, text: &Vec<char>, cursor: u32) {
+    pub fn click_down(&mut self, time: f32, text: &[char], cursor: u32) {
         self.current_click = cursor;
 
         if self.last_click == self.current_click && time - self.last_click_time < DOUBLE_CLICK_TIME
@@ -420,7 +422,7 @@ impl EditboxState {
         self.last_click_time = time;
     }
 
-    pub fn click_move(&mut self, text: &Vec<char>, cursor: u32) {
+    pub fn click_move(&mut self, text: &[char], cursor: u32) {
         self.cursor = cursor;
 
         if self.cursor != self.last_click {
@@ -470,7 +472,7 @@ impl EditboxState {
         self.last_click = cursor;
     }
 
-    pub fn click_up(&mut self, _text: &Vec<char>) {
+    pub fn click_up(&mut self, _text: &[char]) {
         self.click_state = ClickState::None;
         if let Some((from, to)) = self.selection {
             if from != to {

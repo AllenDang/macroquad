@@ -8,6 +8,12 @@ pub struct ProgressBar<'a> {
     label_width: Option<f32>,
 }
 
+impl<'a> Default for ProgressBar<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> ProgressBar<'a> {
     pub const fn new() -> Self {
         ProgressBar {

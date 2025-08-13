@@ -33,7 +33,7 @@ impl<T: ToBytes> ToBytes for &[T] {
         unsafe {
             std::slice::from_raw_parts(
                 self.as_ptr() as *const _ as *const u8,
-                size_of::<T>() * self.len(),
+                std::mem::size_of_val(*self),
             )
         }
     }

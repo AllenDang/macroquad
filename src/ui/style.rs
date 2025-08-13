@@ -324,7 +324,7 @@ impl Style {
             selected,
         } = element_state;
 
-        if focused == false {
+        if !focused {
             return self.color_inactive.unwrap_or(Color::from_rgba(
                 (self.color.r * 255.) as u8,
                 (self.color.g * 255.) as u8,

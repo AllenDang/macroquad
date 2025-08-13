@@ -66,6 +66,12 @@ pub struct AudioContext {
     native_ctx: QuadSndContext,
 }
 
+impl Default for AudioContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AudioContext {
     pub fn new() -> AudioContext {
         AudioContext {
@@ -105,7 +111,6 @@ impl std::fmt::Debug for Sound {
 /// Load audio file.
 ///
 /// Attempts to automatically detect the format of the source of data.
-
 pub async fn load_sound(path: &str) -> Result<Sound, Error> {
     let data = load_file(path).await?;
 
@@ -123,7 +128,7 @@ pub async fn load_sound_from_bytes(data: &[u8]) -> Result<Sound, Error> {
 
     // only on wasm the sound is not ready right away
     #[cfg(target_arch = "wasm32")]
-    while sound.is_loaded() == false {
+    while !sound.is_loaded() {
         crate::window::next_frame().await;
     }
 

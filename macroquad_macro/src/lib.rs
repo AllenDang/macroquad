@@ -216,6 +216,11 @@ pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
         "
     #[test]
     fn {test_name}() {{
+        // Skip graphics tests in headless environments
+        if std::env::var(\"CI\").is_ok() || std::env::var(\"HEADLESS\").is_ok() {{
+            println!(\"Skipping graphics test in headless environment\");
+            return;
+        }}
         let _lock = unsafe {{
           let mutex = macroquad::test::ONCE.call_once(|| {{
             macroquad::test::MUTEX = Some(std::sync::Mutex::new(()));

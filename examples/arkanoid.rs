@@ -38,7 +38,7 @@ async fn main() {
             platform_x -= 3.0 * delta;
         }
 
-        if stick == false {
+        if !stick {
             ball_x += dx * delta;
             ball_y += dy * delta;
         } else {

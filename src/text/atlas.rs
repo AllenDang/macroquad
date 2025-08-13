@@ -1,4 +1,4 @@
-use crate::{get_context, get_quad_context, math::Rect, texture::Image, Color};
+use crate::{get_quad_context, math::Rect, texture::Image, Color};
 
 use std::collections::HashMap;
 
@@ -29,8 +29,11 @@ pub struct Atlas {
 
 impl Drop for Atlas {
     fn drop(&mut self) {
-        let ctx = &mut get_context().quad_context;
-        ctx.delete_texture(self.texture);
+        // Safely handle context access during cleanup
+        if let Some(context) = crate::try_get_quad_context() {
+            context.delete_texture(self.texture);
+        }
+        // If context is not available (e.g., during thread-local cleanup), skip deletion
     }
 }
 

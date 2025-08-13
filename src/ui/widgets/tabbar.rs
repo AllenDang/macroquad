@@ -34,7 +34,7 @@ impl<'a, 'b> Tabbar<'a, 'b> {
 
         let pos = context.window.cursor.fit(self.size, Layout::Vertical);
 
-        let width = self.size.x as f32 / self.tabs.len() as f32;
+        let width = self.size.x / self.tabs.len() as f32;
 
         let selected = *self
             .selected_tab

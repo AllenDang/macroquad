@@ -259,9 +259,9 @@ pub fn rgb_to_hsl(color: Color) -> (f32, f32, f32) {
     };
 
     // Fix wraparounds
-    if h < 0 as f32 {
+    if h < 0_f32 {
         h += 1.0;
-    } else if h > 1 as f32 {
+    } else if h > 1_f32 {
         h -= 1.0;
     }
 

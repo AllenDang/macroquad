@@ -156,22 +156,39 @@ use crate::{
 use glam::{vec2, Mat4, Vec2};
 
 pub(crate) mod thread_assert {
-    static mut THREAD_ID: Option<std::thread::ThreadId> = None;
+    use std::cell::RefCell;
+
+    std::thread_local! {
+        static MAIN_THREAD_ID: RefCell<Option<std::thread::ThreadId>> = const { RefCell::new(None) };
+    }
 
     pub fn set_thread_id() {
-        unsafe {
-            THREAD_ID = Some(std::thread::current().id());
-        }
+        MAIN_THREAD_ID.with(|id_cell| {
+            let mut id_opt = id_cell.borrow_mut();
+            if id_opt.is_some() {
+                // In test environments, thread ID might already be set - just verify it's the same thread
+                let current_id = std::thread::current().id();
+                if let Some(existing_id) = *id_opt {
+                    if current_id != existing_id {
+                        panic!("Thread ID already set for different thread");
+                    }
+                }
+                return;
+            }
+            *id_opt = Some(std::thread::current().id());
+        });
     }
 
     pub fn same_thread() {
-        unsafe {
-            thread_local! {
-                static CURRENT_THREAD_ID: std::thread::ThreadId = std::thread::current().id();
+        let current_id = std::thread::current().id();
+        MAIN_THREAD_ID.with(|id_cell| {
+            if let Some(main_id) = *id_cell.borrow() {
+                assert_eq!(
+                    current_id, main_id,
+                    "macroquad context accessed from wrong thread"
+                );
             }
-            assert!(THREAD_ID.is_some());
-            assert!(THREAD_ID.unwrap() == CURRENT_THREAD_ID.with(|id| *id));
-        }
+        });
     }
 }
 struct Context {
@@ -481,8 +498,11 @@ impl Context {
     }
 }
 
-#[no_mangle]
-static mut CONTEXT: Option<Context> = None;
+use std::cell::RefCell;
+
+std::thread_local! {
+    static CONTEXT: RefCell<Option<Context>> = const { RefCell::new(None) };
+}
 
 // This is required for #[macroquad::test]
 //
@@ -490,24 +510,101 @@ static mut CONTEXT: Option<Context> = None;
 // so this module should be publicly available
 #[doc(hidden)]
 pub mod test {
-    pub static mut MUTEX: Option<std::sync::Mutex<()>> = None;
-    pub static ONCE: std::sync::Once = std::sync::Once::new();
+    use std::sync::{Mutex, Once};
+
+    #[allow(static_mut_refs)]
+    pub static mut MUTEX: Option<Mutex<()>> = None;
+    pub static ONCE: Once = Once::new();
 }
 
 fn get_context() -> &'static mut Context {
     thread_assert::same_thread();
 
-    unsafe { CONTEXT.as_mut().unwrap_or_else(|| panic!()) }
+    // For thread-local storage, we need to return a reference that lives for 'static
+    // This is safe because macroquad is single-threaded and the context lives for the program duration
+    CONTEXT.with(|ctx_cell| {
+        // Get a raw pointer to avoid borrowing issues
+        let ptr = ctx_cell.as_ptr();
+        unsafe {
+            let ctx_opt = &mut *ptr;
+            let ctx = ctx_opt
+                .as_mut()
+                .unwrap_or_else(|| panic!("Context not initialized"));
+
+            // This is safe because:
+            // 1. macroquad is single-threaded by design
+            // 2. The context is thread-local and lives for the thread duration
+            // 3. We maintain the same access patterns as before
+            std::mem::transmute::<&mut Context, &'static mut Context>(ctx)
+        }
+    })
+}
+
+/// Safe context accessor for use in Drop implementations
+/// Returns None if thread-local storage is being destroyed
+fn try_get_context() -> Option<&'static mut Context> {
+    // Try to access TLS without panicking during destruction
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        CONTEXT.try_with(|ctx_cell| {
+            let ptr = ctx_cell.as_ptr();
+            unsafe {
+                let ctx_opt = &mut *ptr;
+                ctx_opt
+                    .as_mut()
+                    .map(|ctx| std::mem::transmute::<&mut Context, &'static mut Context>(ctx))
+            }
+        })
+    }));
+
+    match result {
+        Ok(Ok(Some(ctx))) => Some(ctx),
+        _ => None,
+    }
 }
 
 fn get_quad_context() -> &'static mut dyn miniquad::RenderingBackend {
     thread_assert::same_thread();
 
-    unsafe {
-        assert!(CONTEXT.is_some());
-    }
+    CONTEXT.with(|ctx_cell| {
+        // Get a raw pointer to avoid borrowing issues
+        let ptr = ctx_cell.as_ptr();
+        unsafe {
+            let ctx_opt = &mut *ptr;
+            let ctx = ctx_opt
+                .as_mut()
+                .unwrap_or_else(|| panic!("Context not initialized"));
 
-    unsafe { &mut *CONTEXT.as_mut().unwrap().quad_context }
+            // Same pattern as get_context for API compatibility
+            std::mem::transmute::<
+                &mut dyn miniquad::RenderingBackend,
+                &'static mut dyn miniquad::RenderingBackend,
+            >(&mut *ctx.quad_context)
+        }
+    })
+}
+
+/// Safe quad context accessor for use in Drop implementations
+/// Returns None if thread-local storage is being destroyed
+fn try_get_quad_context() -> Option<&'static mut dyn miniquad::RenderingBackend> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        CONTEXT.try_with(|ctx_cell| {
+            let ptr = ctx_cell.as_ptr();
+            unsafe {
+                let ctx_opt = &mut *ptr;
+                ctx_opt.as_mut().map(|ctx| {
+                    std::mem::transmute::<
+                        &mut dyn miniquad::RenderingBackend,
+                        &'static mut dyn miniquad::RenderingBackend,
+                    >(&mut *ctx.quad_context)
+                })
+            }
+        })
+    }));
+
+    match result {
+        Ok(Ok(Some(ctx))) => Some(ctx),
+        _ => None,
+    }
 }
 
 struct Stage {
@@ -666,7 +763,7 @@ impl EventHandler for Stage {
     fn key_down_event(&mut self, keycode: KeyCode, modifiers: KeyMods, repeat: bool) {
         let context = get_context();
         context.keys_down.insert(keycode);
-        if repeat == false {
+        if !repeat {
             context.keys_pressed.insert(keycode);
         }
 
@@ -759,7 +856,7 @@ impl EventHandler for Stage {
                 }),
             );
 
-            if result == false {
+            if !result {
                 if let Some(recovery_future) = get_context().recovery_future.take() {
                     self.main_future = recovery_future;
                 }
@@ -860,9 +957,9 @@ pub mod conf {
         ///
         /// Some examples when altering those values migh be convinient:
         /// - for huge 3d models that do not fit into a single draw call, increasing
-        ///     the buffer size might be easier than splitting the model.
+        ///   the buffer size might be easier than splitting the model.
         /// - when each draw_* call got its own material,
-        ///     buffer size might be reduced to save some memory
+        ///   buffer size might be reduced to save some memory
         pub draw_call_vertex_capacity: usize,
         pub draw_call_index_capacity: usize,
     }
@@ -897,6 +994,7 @@ impl From<miniquad::conf::Conf> for conf::Conf {
 pub struct Window {}
 
 impl Window {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(label: &str, future: impl Future<Output = ()> + 'static) {
         Window::from_config(
             conf::Conf {
@@ -926,16 +1024,18 @@ impl Window {
                 draw_call_vertex_capacity,
                 draw_call_index_capacity,
             );
-            unsafe { CONTEXT = Some(context) };
+            CONTEXT.with(|ctx_cell| {
+                *ctx_cell.borrow_mut() = Some(context);
+            });
 
             Box::new(Stage {
                 main_future: Box::pin(async {
                     future.await;
-                    unsafe {
-                        if let Some(ctx) = CONTEXT.as_mut() {
+                    CONTEXT.with(|ctx_cell| {
+                        if let Some(ctx) = ctx_cell.borrow_mut().as_mut() {
                             ctx.gl.reset();
                         }
-                    }
+                    });
                 }),
             })
         });

@@ -5,6 +5,9 @@ use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 use crate::Error;
 
+// Type alias for complex file loading result type
+type FileLoadingResult = Arc<Mutex<Option<Result<Vec<u8>, Error>>>>;
+
 // Returns Pending as long as its inner bool is false.
 #[derive(Default)]
 pub struct FrameFuture {
@@ -28,7 +31,7 @@ impl Future for FrameFuture {
 }
 
 pub struct FileLoadingFuture {
-    pub contents: Arc<Mutex<Option<Result<Vec<u8>, Error>>>>,
+    pub contents: FileLoadingResult,
 }
 
 impl Future for FileLoadingFuture {

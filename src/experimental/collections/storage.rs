@@ -23,21 +23,32 @@ use std::{
     rc::Rc,
 };
 
-static mut STORAGE: Option<HashMap<TypeId, Box<dyn Any>>> = None;
+std::thread_local! {
+    static STORAGE: RefCell<Option<HashMap<TypeId, Box<dyn Any>>>> = RefCell::new(None);
+}
+
+fn get_storage() -> &'static mut HashMap<TypeId, Box<dyn Any>> {
+    STORAGE.with(|storage_cell| {
+        let mut storage_opt = storage_cell.borrow_mut();
+        if storage_opt.is_none() {
+            *storage_opt = Some(HashMap::new());
+        }
+
+        // Safe for same reasons as main CONTEXT - single-threaded design
+        let storage = storage_opt.as_mut().unwrap();
+        unsafe {
+            std::mem::transmute::<
+                &mut HashMap<TypeId, Box<dyn Any>>,
+                &'static mut HashMap<TypeId, Box<dyn Any>>,
+            >(storage)
+        }
+    })
+}
 
 /// Store data in global storage.
 /// Will silently overwrite an old value if any.
 pub fn store<T: Any>(data: T) {
-    unsafe {
-        if STORAGE.is_none() {
-            STORAGE = Some(HashMap::new());
-        }
-
-        STORAGE
-            .as_mut()
-            .unwrap()
-            .insert(TypeId::of::<T>(), Box::new(Rc::new(RefCell::new(data))))
-    };
+    get_storage().insert(TypeId::of::<T>(), Box::new(Rc::new(RefCell::new(data))));
 }
 
 /// Get reference to data from global storage.
@@ -49,33 +60,25 @@ pub fn get<T: Any>() -> impl Deref<Target = T> {
 /// Get reference to data from global storage.
 /// Will return None if there is no data available with this type.
 pub fn try_get<T: Any>() -> Option<impl Deref<Target = T>> {
-    unsafe {
-        if STORAGE.is_none() {
-            STORAGE = Some(HashMap::new());
-        }
-
-        STORAGE.as_mut().unwrap().get(&TypeId::of::<T>()).as_ref()
-    }
-    .and_then(|data| {
-        data.downcast_ref::<Rc<RefCell<T>>>()
-            .map(|data| data.borrow())
-    })
+    get_storage()
+        .get(&TypeId::of::<T>())
+        .as_ref()
+        .and_then(|data| {
+            data.downcast_ref::<Rc<RefCell<T>>>()
+                .map(|data| data.borrow())
+        })
 }
 
 /// Get mutable reference to data from global storage.
 /// Will return None if there is no data available with this type.
 pub fn try_get_mut<T: Any>() -> Option<impl DerefMut<Target = T>> {
-    unsafe {
-        if STORAGE.is_none() {
-            STORAGE = Some(HashMap::new());
-        }
-
-        STORAGE.as_mut().unwrap().get(&TypeId::of::<T>()).as_ref()
-    }
-    .and_then(|data| {
-        data.downcast_ref::<Rc<RefCell<T>>>()
-            .map(|data| data.borrow_mut())
-    })
+    get_storage()
+        .get(&TypeId::of::<T>())
+        .as_ref()
+        .and_then(|data| {
+            data.downcast_ref::<Rc<RefCell<T>>>()
+                .map(|data| data.borrow_mut())
+        })
 }
 
 /// Get mutable reference to data from global storage.

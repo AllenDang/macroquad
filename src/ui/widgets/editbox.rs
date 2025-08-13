@@ -102,7 +102,7 @@ impl<'a> Editbox<'a> {
                     // Don't insert spaces for control characters
                     if character.is_ascii()
                         && !character.is_ascii_control()
-                        && self.filter.as_ref().map_or(true, |f| f(character))
+                        && self.filter.as_ref().is_none_or(|f| f(character))
                     {
                         if state.selection.is_some() {
                             state.delete_selected(text);
@@ -137,7 +137,7 @@ impl<'a> Editbox<'a> {
                     ..
                 } => {
                     if let Some(clipboard) = clipboard.get() {
-                        if clipboard.len() != 0 {
+                        if !clipboard.is_empty() {
                             if state.selection.is_some() {
                                 state.delete_selected(text);
                             }
@@ -270,7 +270,7 @@ impl<'a> Editbox<'a> {
                     let to_line_end = state.find_line_end(text) as i32;
 
                     state.move_cursor(text, to_line_end, modifier_shift);
-                    if text.len() != 0 && state.cursor < text.len() as u32 - 1 {
+                    if !text.is_empty() && state.cursor < text.len() as u32 - 1 {
                         state.move_cursor(text, 1, modifier_shift);
                         state.move_cursor_within_line(text, to_line_begin, modifier_shift);
                     }
@@ -299,7 +299,7 @@ impl<'a> Editbox<'a> {
             miniquad::window::show_keyboard(true);
             *context.input_focus = Some(self.id);
         }
-        if context.input_focused(self.id) && context.input.click_down() && hovered == false {
+        if context.input_focused(self.id) && context.input.click_down() && !hovered {
             #[cfg(target_os = "android")]
             miniquad::window::show_keyboard(false);
             *context.input_focus = None;
@@ -324,8 +324,7 @@ impl<'a> Editbox<'a> {
             state.cursor = text_vec.len() as u32;
         }
 
-        let input_focused =
-            context.input_focus.map_or(false, |id| id == self.id) && context.focused;
+        let input_focused = context.input_focus.is_some_and(|id| id == self.id) && context.focused;
 
         let is_tab_selected = context
             .tab_selector
@@ -335,7 +334,7 @@ impl<'a> Editbox<'a> {
         }
 
         // reset selection state when lost focus
-        if context.focused == false || input_focused == false {
+        if !context.focused || !input_focused {
             state.deselect();
             state.clicks_counter = 0;
         }
@@ -345,7 +344,7 @@ impl<'a> Editbox<'a> {
 
         let mut edited = false;
         if context.focused && input_focused {
-            edited = context.input.input_buffer.len() != 0;
+            edited = !context.input.input_buffer.is_empty();
             self.apply_keyboard_input(
                 &mut context.input.input_buffer,
                 &mut *context.clipboard,
@@ -474,7 +473,7 @@ impl<'a> Editbox<'a> {
                     .unwrap_or(0.);
             }
 
-            if clicked == false && hovered && context.input.is_mouse_down() && input_focused {
+            if !clicked && hovered && context.input.is_mouse_down() && input_focused {
                 let cursor_on_current_line =
                     (context.input.mouse_position.y - (pos.y + y + line_height / 2.)).abs()
                         < line_height / 2. + 0.1;

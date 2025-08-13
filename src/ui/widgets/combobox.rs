@@ -66,7 +66,7 @@ impl<'a, 'b, 'c> ComboBox<'a, 'b, 'c> {
             .storage_any
             .get_or_default::<bool>(hash!(self.id, "combobox_state"));
 
-        if context.window.was_active == false {
+        if !context.window.was_active {
             *state = false;
         }
 
@@ -110,13 +110,12 @@ impl<'a, 'b, 'c> ComboBox<'a, 'b, 'c> {
         let modal_size = Vec2::new(active_area_w, self.variants.len() as f32 * size.y);
         let modal_rect = Rect::new(pos.x, pos.y + size.y, modal_size.x, modal_size.y);
 
-        if *state == false && context.focused && hovered && context.input.click_down {
+        if !*state && context.focused && hovered && context.input.click_down {
             *state = true;
         } else if *state
             && (context.input.escape
                 || context.input.enter
-                || (modal_rect.contains(context.input.mouse_position) == false
-                    && context.input.click_down))
+                || (!modal_rect.contains(context.input.mouse_position) && context.input.click_down))
         {
             *state = false;
         }

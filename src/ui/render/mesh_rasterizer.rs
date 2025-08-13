@@ -20,6 +20,12 @@ pub struct DrawList {
     pub texture: Option<Texture2D>,
 }
 
+impl Default for DrawList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DrawList {
     pub const fn new() -> DrawList {
         DrawList {
@@ -169,14 +175,14 @@ impl DrawList {
 
     pub fn draw_line(
         &mut self,
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
+        start: (f32, f32),
+        end: (f32, f32),
         thickness: f32,
         source: Rect,
         color: Color,
     ) {
+        let (x1, y1) = start;
+        let (x2, y2) = end;
         let dx = x2 - x1;
         let dy = y2 - y1;
         let nx = -dy; // https://stackoverflow.com/questions/1243614/how-do-i-calculate-the-normal-vector-of-a-line-segment
@@ -204,11 +210,11 @@ impl DrawList {
     }
 }
 
-fn get_active_draw_list<'a, 'b>(
+fn get_active_draw_list<'a>(
     draw_lists: &'a mut Vec<DrawList>,
-    command: &'b DrawCommand,
+    command: &DrawCommand,
 ) -> &'a mut DrawList {
-    if draw_lists.len() == 0 {
+    if draw_lists.is_empty() {
         draw_lists.push(DrawList::new());
     }
 
@@ -223,7 +229,7 @@ fn get_active_draw_list<'a, 'b>(
             if !last
                 .texture
                 .as_ref()
-                .map_or(false, |t| t.texture == texture.texture)
+                .is_some_and(|t| t.texture == texture.texture)
             {
                 let clipping_zone = last.clipping_zone;
 
@@ -241,7 +247,7 @@ fn get_active_draw_list<'a, 'b>(
         | DrawCommand::DrawTriangle { .. } => {
             let (vertices, indices) = command.estimate_triangles_budget();
 
-            if last.texture != None
+            if last.texture.is_some()
                 || last.vertices.len() + vertices >= MAX_VERTICES
                 || last.indices.len() + indices >= MAX_INDICES
             {
@@ -298,7 +304,7 @@ pub(crate) fn render_command(draw_lists: &mut Vec<DrawList>, command: DrawComman
             source,
             color,
         } => {
-            active_draw_list.draw_line(start.x, start.y, end.x, end.y, 1., source, color);
+            active_draw_list.draw_line((start.x, start.y), (end.x, end.y), 1., source, color);
         }
         DrawCommand::DrawCharacter {
             dest,

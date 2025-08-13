@@ -9,7 +9,11 @@ struct GlPipelineGuarded(GlPipeline);
 
 impl Drop for GlPipelineGuarded {
     fn drop(&mut self) {
-        get_context().gl.delete_pipeline(self.0);
+        // Safely handle context access during cleanup
+        if let Some(context) = crate::try_get_context() {
+            context.gl.delete_pipeline(self.0);
+        }
+        // If context is not available (e.g., during thread-local cleanup), skip deletion
     }
 }
 
@@ -125,13 +129,16 @@ pub fn load_material(
 ) -> Result<Material, Error> {
     let context = &mut get_context();
 
-    let pipeline = context.gl.make_pipeline(
-        &mut *context.quad_context,
-        shader,
-        params.pipeline_params,
-        params.uniforms,
-        params.textures,
-    )?;
+    let pipeline = context
+        .gl
+        .make_pipeline(
+            &mut *context.quad_context,
+            shader,
+            params.pipeline_params,
+            params.uniforms,
+            params.textures,
+        )
+        .map_err(|_| Error::UnknownError("Failed to create pipeline"))?;
 
     Ok(Material {
         pipeline: Arc::new(GlPipelineGuarded(pipeline)),
@@ -153,14 +160,9 @@ pub mod shaders {
     type IncludeFilename = String;
     type IncludeContent = String;
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct PreprocessorConfig {
         pub includes: Vec<(IncludeFilename, IncludeContent)>,
-    }
-    impl Default for PreprocessorConfig {
-        fn default() -> PreprocessorConfig {
-            PreprocessorConfig { includes: vec![] }
-        }
     }
 
     impl PreprocessorConfig {}
@@ -211,9 +213,7 @@ pub mod shaders {
                 .includes
                 .iter()
                 .find(|(name, _)| name == &filename)
-                .expect(&format!(
-                    "Include file {filename} in not on \"includes\" list"
-                ));
+                .unwrap_or_else(|| panic!("Include file {filename} in not on \"includes\" list"));
 
             let _ = res
                 .splice(

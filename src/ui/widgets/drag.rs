@@ -107,20 +107,18 @@ impl<'a> Drag<'a> {
             .contains(context.input.mouse_position);
 
         // state transition between editbox and dragbox
-        if s.in_editbox == false {
+        if !s.in_editbox {
             if hovered && context.input.is_mouse_down() && context.input.modifier_ctrl {
                 s.in_editbox = true;
             }
-        } else {
-            if context.input.escape
-                || context.input.enter
-                || (hovered == false && context.input.is_mouse_down())
-            {
-                s.in_editbox = false;
-            }
+        } else if context.input.escape
+            || context.input.enter
+            || (!hovered && context.input.is_mouse_down())
+        {
+            s.in_editbox = false;
         }
 
-        if s.in_editbox == false {
+        if !s.in_editbox {
             let context = ui.get_active_window_context();
 
             // context.window.painter.draw_rect(
@@ -148,7 +146,7 @@ impl<'a> Drag<'a> {
             );
 
             if let Some(drag) = s.drag {
-                if context.input.is_mouse_down == false {
+                if !context.input.is_mouse_down {
                     s.drag = None;
                     context.input.cursor_grabbed = false;
                     if !hovered {
@@ -173,15 +171,13 @@ impl<'a> Drag<'a> {
                         }
                     }
                 }
-            } else {
-                if hovered && context.input.is_mouse_down() {
-                    s.drag = Some(DragState {
-                        start_mouse: context.input.mouse_position.x,
-                        start_value: (*data).into(),
-                    });
-                    *context.input_focus = Some(self.id);
-                    context.input.cursor_grabbed = true;
-                }
+            } else if hovered && context.input.is_mouse_down() {
+                s.drag = Some(DragState {
+                    start_mouse: context.input.mouse_position.x,
+                    start_value: (*data).into(),
+                });
+                *context.input_focus = Some(self.id);
+                context.input.cursor_grabbed = true;
             }
         } else {
             if s.string_represents != (*data).into() {
@@ -208,7 +204,7 @@ impl<'a> Drag<'a> {
 
         let context = ui.get_active_window_context();
 
-        if self.label.is_empty() == false {
+        if !self.label.is_empty() {
             context.window.painter.draw_element_label(
                 &context.style.label_style,
                 Vec2::new(pos.x + size.x / 2. + 5., pos.y),

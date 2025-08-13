@@ -342,10 +342,7 @@ impl Painter {
                 glyph.rect.w,
                 glyph.rect.h,
             );
-            if self
-                .clipping_zone
-                .map_or(false, |clip| !clip.overlaps(&dest))
-            {
+            if self.clipping_zone.is_some_and(|clip| !clip.overlaps(&dest)) {
                 let advance = font_data.advance;
                 return Some(advance);
             }
@@ -378,7 +375,7 @@ impl Painter {
         font: &mut Font,
         font_size: u16,
     ) {
-        if self.clipping_zone.map_or(false, |clip| {
+        if self.clipping_zone.is_some_and(|clip| {
             !clip.overlaps(&Rect::new(position.x - 150., position.y - 25., 200., 50.))
         }) {
             return;
@@ -402,10 +399,7 @@ impl Painter {
     }
 
     pub fn draw_raw_texture(&mut self, rect: Rect, texture: &Texture2D) {
-        if self
-            .clipping_zone
-            .map_or(false, |clip| !clip.overlaps(&rect))
-        {
+        if self.clipping_zone.is_some_and(|clip| !clip.overlaps(&rect)) {
             return;
         }
 
@@ -420,10 +414,7 @@ impl Painter {
         S: Into<Option<Color>>,
         T: Into<Option<Color>>,
     {
-        if self
-            .clipping_zone
-            .map_or(false, |clip| !clip.overlaps(&rect))
-        {
+        if self.clipping_zone.is_some_and(|clip| !clip.overlaps(&rect)) {
             return;
         }
 
@@ -448,10 +439,7 @@ impl Painter {
         color: Color,
         margin: Option<RectOffset>,
     ) {
-        if self
-            .clipping_zone
-            .map_or(false, |clip| !clip.overlaps(&rect))
-        {
+        if self.clipping_zone.is_some_and(|clip| !clip.overlaps(&rect)) {
             return;
         }
 
@@ -478,9 +466,10 @@ impl Painter {
     where
         T: Into<Color>,
     {
-        if self.clipping_zone.map_or(false, |clip| {
-            !clip.contains(p0) && !clip.contains(p1) && !clip.contains(p2)
-        }) {
+        if self
+            .clipping_zone
+            .is_some_and(|clip| !clip.contains(p0) && !clip.contains(p1) && !clip.contains(p2))
+        {
             return;
         }
 
@@ -503,7 +492,7 @@ impl Painter {
     pub fn draw_line<T: Into<Color>>(&mut self, start: Vec2, end: Vec2, color: T) {
         if self
             .clipping_zone
-            .map_or(false, |clip| !clip.contains(start) && !clip.contains(end))
+            .is_some_and(|clip| !clip.contains(start) && !clip.contains(end))
         {
             return;
         }
@@ -540,17 +529,12 @@ impl Painter {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[allow(dead_code)]
 pub enum Alignment {
+    #[default]
     Left,
     Center,
-}
-
-impl Default for Alignment {
-    fn default() -> Alignment {
-        Alignment::Left
-    }
 }
 
 #[derive(Clone, Debug)]

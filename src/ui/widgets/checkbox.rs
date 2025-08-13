@@ -138,7 +138,7 @@ impl<'a> Checkbox<'a> {
 
         let context = ui.get_active_window_context();
 
-        if self.label.is_empty() == false {
+        if !self.label.is_empty() {
             context.window.painter.draw_element_label(
                 &context.style.label_style,
                 Vec2::new(pos.x + size.x * self.ratio, pos.y),

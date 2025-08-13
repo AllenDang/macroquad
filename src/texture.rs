@@ -132,7 +132,7 @@ impl Image {
     pub fn gen_image_color(width: u16, height: u16, color: Color) -> Image {
         let mut bytes = vec![0; width as usize * height as usize * 4];
         for i in 0..width as usize * height as usize {
-            bytes[i * 4 + 0] = (color.r * 255.) as u8;
+            bytes[i * 4] = (color.r * 255.) as u8;
             bytes[i * 4 + 1] = (color.g * 255.) as u8;
             bytes[i * 4 + 2] = (color.b * 255.) as u8;
             bytes[i * 4 + 3] = (color.a * 255.) as u8;
@@ -148,11 +148,11 @@ impl Image {
     pub fn update(&mut self, colors: &[Color]) {
         assert!(self.width as usize * self.height as usize == colors.len());
 
-        for i in 0..colors.len() {
-            self.bytes[i * 4] = (colors[i].r * 255.) as u8;
-            self.bytes[i * 4 + 1] = (colors[i].g * 255.) as u8;
-            self.bytes[i * 4 + 2] = (colors[i].b * 255.) as u8;
-            self.bytes[i * 4 + 3] = (colors[i].a * 255.) as u8;
+        for (i, color) in colors.iter().enumerate() {
+            self.bytes[i * 4] = (color.r * 255.) as u8;
+            self.bytes[i * 4 + 1] = (color.g * 255.) as u8;
+            self.bytes[i * 4 + 2] = (color.b * 255.) as u8;
+            self.bytes[i * 4 + 3] = (color.a * 255.) as u8;
         }
     }
 
@@ -218,7 +218,7 @@ impl Image {
         let mut n = 0;
         for y in y..y + height {
             for x in x..x + width {
-                bytes[n] = self.bytes[y * self.width as usize * 4 + x * 4 + 0];
+                bytes[n] = self.bytes[y * self.width as usize * 4 + x * 4];
                 bytes[n + 1] = self.bytes[y * self.width as usize * 4 + x * 4 + 1];
                 bytes[n + 2] = self.bytes[y * self.width as usize * 4 + x * 4 + 2];
                 bytes[n + 3] = self.bytes[y * self.width as usize * 4 + x * 4 + 3];
@@ -377,8 +377,11 @@ impl RenderPass {
 impl Drop for RenderPass {
     fn drop(&mut self) {
         if Arc::strong_count(&self.render_pass) < 2 {
-            let context = get_quad_context();
-            context.delete_render_pass(*self.render_pass);
+            // Safely handle context access during cleanup
+            if let Some(context) = crate::try_get_quad_context() {
+                context.delete_render_pass(*self.render_pass);
+            }
+            // If context is not available (e.g., during thread-local cleanup), skip deletion
         }
     }
 }

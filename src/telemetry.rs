@@ -2,23 +2,34 @@ use crate::{get_context, get_quad_context, time::get_time};
 
 use std::collections::HashMap;
 
-static mut PROFILER: Option<Profiler> = None;
+use std::cell::RefCell;
+
+std::thread_local! {
+    static PROFILER: RefCell<Option<Profiler>> = const { RefCell::new(None) };
+}
 
 fn get_profiler() -> &'static mut Profiler {
-    unsafe {
-        PROFILER.get_or_insert_with(|| Profiler {
-            frame: Frame::new(),
-            queries: HashMap::new(),
-            active_query: None,
-            prev_frame: Frame::new(),
-            enabled: false,
-            enable_request: None,
-            capture_request: false,
-            capture: false,
-            drawcalls: vec![],
-            strings: vec![],
-        })
-    }
+    PROFILER.with(|profiler_cell| {
+        let mut profiler_opt = profiler_cell.borrow_mut();
+        if profiler_opt.is_none() {
+            *profiler_opt = Some(Profiler {
+                frame: Frame::new(),
+                queries: HashMap::new(),
+                active_query: None,
+                prev_frame: Frame::new(),
+                enabled: false,
+                enable_request: None,
+                capture_request: false,
+                capture: false,
+                drawcalls: vec![],
+                strings: vec![],
+            });
+        }
+
+        // Safe for same reasons as main CONTEXT - single-threaded design
+        let profiler = profiler_opt.as_mut().unwrap();
+        unsafe { std::mem::transmute::<&mut Profiler, &'static mut Profiler>(profiler) }
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -154,7 +165,7 @@ impl Frame {
     }
 
     pub fn try_clone(&self) -> Option<Frame> {
-        if self.active_zone.is_null() == false {
+        if !self.active_zone.is_null() {
             return None;
         }
 
@@ -260,7 +271,7 @@ impl Profiler {
 
     fn end_zone(&mut self) {
         assert!(
-            self.frame.active_zone.is_null() == false,
+            !self.frame.active_zone.is_null(),
             "end_zone called without begin_zone"
         );
 

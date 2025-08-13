@@ -26,6 +26,9 @@ opt-level = 3
 [package.metadata.docs.rs]
 all-features = true
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(one_screenshot)'] }
+
 [dependencies]
 miniquad = { git = "https://github.com/AllenDang/miniquad", features = [
   "log-impl",

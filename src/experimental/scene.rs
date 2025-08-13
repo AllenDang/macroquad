@@ -54,10 +54,7 @@ impl<T: 'static> std::fmt::Debug for Handle<T> {
 
 impl<T: 'static> Clone for Handle<T> {
     fn clone(&self) -> Handle<T> {
-        Handle {
-            id: self.id,
-            _marker: PhantomData,
-        }
+        *self
     }
 }
 
@@ -101,9 +98,9 @@ impl<T> Handle<T> {
 
         let offset = unsafe {
             let mut base = std::mem::MaybeUninit::<T>::uninit();
-            let field = f(std::mem::transmute(base.as_mut_ptr())) as *mut _ as *mut u8;
+            let field = f(&mut *base.as_mut_ptr()) as *mut _ as *mut u8;
 
-            (field as *mut u8).offset_from(base.as_mut_ptr() as *mut u8)
+            field.offset_from(base.as_mut_ptr() as *mut u8)
         };
 
         Lens {
@@ -135,7 +132,7 @@ impl<T: 'static> RefMut<T> {
     }
 
     pub fn persist(&self) {
-        unsafe { get_scene() }.nodes[self.handle.id.unwrap().id]
+        get_scene().nodes[self.handle.id.unwrap().id]
             .as_mut()
             .unwrap()
             .permanent = true;
@@ -151,7 +148,7 @@ impl<T: 'static> RefMut<T> {
         unsafe {
             *self.used = false;
         }
-        unsafe { get_scene() }.delete(self.handle.id.unwrap());
+        get_scene().delete(self.handle.id.unwrap());
         std::mem::forget(self);
     }
 }
@@ -172,7 +169,7 @@ impl<T> std::ops::DerefMut for RefMut<T> {
 
 impl<T: 'static> Drop for RefMut<T> {
     fn drop(&mut self) {
-        assert_eq!(unsafe { *self.used }, true);
+        assert!(unsafe { *self.used });
         unsafe {
             *self.used = false;
         }
@@ -201,7 +198,7 @@ impl<'a> RefMutAny<'a> {
         unsafe {
             *self.used = false;
         }
-        unsafe { get_scene() }.delete(self.handle.0);
+        get_scene().delete(self.handle.0);
         std::mem::forget(self);
     }
 
@@ -244,7 +241,7 @@ impl<'a> std::ops::DerefMut for RefMutAny<'a> {
 
 impl<'a> Drop for RefMutAny<'a> {
     fn drop(&mut self) {
-        assert_eq!(unsafe { *self.used }, true);
+        assert!(unsafe { *self.used });
 
         unsafe {
             *self.used = false;
@@ -299,7 +296,8 @@ impl Cell {
         assert!(size_of::<T>() <= self.data_len);
 
         let trait_obj = &data as &dyn NodeAny;
-        let (_, vtable) = unsafe { std::mem::transmute::<_, (*mut (), *mut ())>(trait_obj) };
+        let (_, vtable) =
+            unsafe { std::mem::transmute::<&dyn NodeAny, (*mut (), *mut ())>(trait_obj) };
 
         self.vtable = vtable;
         self.ready = (&(Node::ready as fn(RefMut<T>)) as *const fn(RefMut<T>)).cast();
@@ -363,7 +361,7 @@ impl Scene {
             }) = cell
             {
                 if let Some(cell) = cell.take() {
-                    assert!(unsafe { *cell.used == false });
+                    assert!(unsafe { !*cell.used });
 
                     unsafe {
                         (*cell.virtual_drop)(cell.data);
@@ -377,7 +375,7 @@ impl Scene {
         }
     }
 
-    pub fn get_any(&mut self, handle: HandleUntyped) -> Option<RefMutAny> {
+    pub fn get_any(&mut self, handle: HandleUntyped) -> Option<RefMutAny<'_>> {
         let handle = handle.0;
         let cell = self.nodes.get_mut(handle.id)?;
 
@@ -436,7 +434,8 @@ impl Scene {
             self.nodes[id.id] = Some(free_node);
         } else {
             let trait_obj = &data as &dyn NodeAny;
-            let (_, vtable) = unsafe { std::mem::transmute::<_, (*mut (), *mut ())>(trait_obj) };
+            let (_, vtable) =
+                unsafe { std::mem::transmute::<&dyn NodeAny, (*mut (), *mut ())>(trait_obj) };
 
             let ptr = self.arena.alloc(size_of::<T>()) as *mut _ as *mut T;
             unsafe {
@@ -447,7 +446,7 @@ impl Scene {
             unsafe {
                 std::ptr::write(used, false);
             }
-            let used = used as *mut _ as *mut bool;
+            let used = used as *mut _;
 
             id = Id {
                 id: self.nodes.len(),
@@ -480,7 +479,7 @@ impl Scene {
     pub fn update(&mut self) {
         for node in &mut self.iter() {
             let cell = self.nodes[node.handle.0.id].as_mut().unwrap();
-            if cell.initialized == false {
+            if !cell.initialized {
                 cell.initialized = true;
 
                 let node: RefMut<()> = node.to_typed::<()>();
@@ -522,20 +521,18 @@ impl Scene {
             }
         }
 
-        for camera in self.camera.iter() {
-            if let Some(camera) = camera {
-                self.camera_pos = camera.target;
-                crate::prelude::push_camera_state();
-                crate::prelude::set_camera(&*camera);
+        for camera in self.camera.iter().flatten() {
+            self.camera_pos = camera.target;
+            crate::prelude::push_camera_state();
+            crate::prelude::set_camera(camera);
 
-                for node in &mut self.iter() {
-                    let cell = self.nodes[node.handle.0.id].as_mut().unwrap();
-                    let node: RefMut<()> = node.to_typed::<()>();
-                    unsafe { (*cell.draw)(node) };
-                }
-
-                crate::prelude::pop_camera_state();
+            for node in &mut self.iter() {
+                let cell = self.nodes[node.handle.0.id].as_mut().unwrap();
+                let node: RefMut<()> = node.to_typed::<()>();
+                unsafe { (*cell.draw)(node) };
             }
+
+            crate::prelude::pop_camera_state();
         }
 
         for id in self.dense_ongoing.drain(0..) {
@@ -561,7 +558,7 @@ impl Iterator for MagicVecIterator {
     type Item = RefMutAny<'static>;
 
     fn next(&mut self) -> Option<RefMutAny<'static>> {
-        let scene = unsafe { get_scene() };
+        let scene = get_scene();
         let nodes = &mut scene.nodes;
         let dense = &scene.dense;
         if self.n >= self.len {
@@ -593,10 +590,23 @@ impl Iterator for MagicVecIterator {
     }
 }
 
-static mut SCENE: Option<Scene> = None;
+use std::cell::RefCell;
 
-unsafe fn get_scene() -> &'static mut Scene {
-    SCENE.get_or_insert_with(|| Scene::new())
+std::thread_local! {
+    static SCENE: RefCell<Option<Scene>> = const { RefCell::new(None) };
+}
+
+fn get_scene() -> &'static mut Scene {
+    SCENE.with(|scene_cell| {
+        let mut scene_opt = scene_cell.borrow_mut();
+        if scene_opt.is_none() {
+            *scene_opt = Some(Scene::new());
+        }
+
+        // Safe for same reasons as main CONTEXT - single-threaded design
+        let scene = scene_opt.as_mut().unwrap();
+        unsafe { std::mem::transmute::<&mut Scene, &'static mut Scene>(scene) }
+    })
 }
 
 pub(crate) fn allocated_memory() -> usize {
@@ -606,47 +616,47 @@ pub(crate) fn allocated_memory() -> usize {
 pub fn clear() {
     crate::experimental::coroutines::stop_all_coroutines();
 
-    unsafe { get_scene() }.clear()
+    get_scene().clear()
 }
 
 /// Get node and panic if the node is borrowed or deleted
 pub fn get_node<T: Node>(handle: Handle<T>) -> RefMut<T> {
-    unsafe { get_scene() }
+    get_scene()
         .get(handle)
-        .expect(&format!("No such node: {:?}", handle.id))
+        .unwrap_or_else(|| panic!("No such node: {:?}", handle.id))
 }
 
 pub fn try_get_node<T: Node>(handle: Handle<T>) -> Option<RefMut<T>> {
-    unsafe { get_scene() }.get(handle)
+    get_scene().get(handle)
 }
 
 pub fn get_untyped_node(handle: HandleUntyped) -> Option<RefMutAny<'static>> {
-    unsafe { get_scene() }.get_any(handle)
+    get_scene().get_any(handle)
 }
 
 pub fn camera_pos() -> crate::Vec2 {
-    unsafe { get_scene() }.camera_pos
+    get_scene().camera_pos
 }
 
 pub fn set_camera(n: usize, camera: Option<Camera2D>) {
     assert!(n <= 4);
-    unsafe { get_scene() }.camera[n] = camera;
+    get_scene().camera[n] = camera;
 }
 
 pub fn add_node<T: Node>(node: T) -> Handle<T> {
-    unsafe { get_scene() }.add_node(node)
+    get_scene().add_node(node)
 }
 
 pub(crate) fn update() {
-    unsafe { get_scene() }.update()
+    get_scene().update()
 }
 
 pub fn all_nodes() -> MagicVecIterator {
-    unsafe { get_scene() }.iter()
+    get_scene().iter()
 }
 
 pub fn find_node_by_type<T: Any>() -> Option<RefMut<T>> {
-    unsafe { get_scene() }
+    get_scene()
         .iter()
         .find(|node| node.is::<T>())
         .map(|node| node.to_typed())
@@ -667,7 +677,7 @@ pub fn find_nodes_with<T: Any + Copy>() -> impl Iterator<Item = NodeWith<T>> {
 }
 
 pub fn find_nodes_by_type<T: Any>() -> impl Iterator<Item = RefMut<T>> {
-    unsafe { get_scene() }
+    get_scene()
         .iter()
         .filter(|node| node.is::<T>())
         .map(|node| node.to_typed())
@@ -676,7 +686,7 @@ pub fn find_nodes_by_type<T: Any>() -> impl Iterator<Item = RefMut<T>> {
 const CONST_FPS: f64 = 1.0 / 60.;
 
 pub(crate) fn in_fixed_update() -> bool {
-    unsafe { get_scene() }.in_fixed_update
+    get_scene().in_fixed_update
 }
 
 pub(crate) const fn fixed_frame_time() -> f32 {

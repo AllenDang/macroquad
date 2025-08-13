@@ -369,18 +369,30 @@ pub fn draw_line(x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32, color: Colo
     );
 }
 
+/// Parameters for drawing an arc
+#[derive(Debug, Clone, Copy)]
+pub struct ArcParams {
+    pub x: f32,
+    pub y: f32,
+    pub sides: u8,
+    pub radius: f32,
+    pub rotation: f32,
+    pub thickness: f32,
+    pub arc: f32,
+}
+
 /// Draw arc from `rotation`(in degrees) to `arc + rotation` (`arc` in degrees),
 /// centered at `[x, y]` with a given number of `sides`, `radius`, line `thickness`, and `color`.
-pub fn draw_arc(
-    x: f32,
-    y: f32,
-    sides: u8,
-    radius: f32,
-    rotation: f32,
-    thickness: f32,
-    arc: f32,
-    color: Color,
-) {
+pub fn draw_arc_ex(params: ArcParams, color: Color) {
+    let ArcParams {
+        x,
+        y,
+        sides,
+        radius,
+        rotation,
+        thickness,
+        arc,
+    } = params;
     let rot = rotation.to_radians();
     let part = arc.to_radians();
 
@@ -415,4 +427,31 @@ pub fn draw_arc(
     }
 
     context.gl.geometry(&verticies, &indicies);
+}
+
+/// Draw arc from `rotation`(in degrees) to `arc + rotation` (`arc` in degrees),
+/// centered at `[x, y]` with a given number of `sides`, `radius`, line `thickness`, and `color`.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_arc(
+    x: f32,
+    y: f32,
+    sides: u8,
+    radius: f32,
+    rotation: f32,
+    thickness: f32,
+    arc: f32,
+    color: Color,
+) {
+    draw_arc_ex(
+        ArcParams {
+            x,
+            y,
+            sides,
+            radius,
+            rotation,
+            thickness,
+            arc,
+        },
+        color,
+    );
 }

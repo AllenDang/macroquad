@@ -173,7 +173,7 @@ pub fn profiler(params: ProfilerParams) {
 
     let frame = telemetry::frame();
 
-    if state.paused == false && state.profiler_window_opened {
+    if !state.paused && state.profiler_window_opened {
         state.frames_buffer.insert(0, frame);
     }
     let time = get_frame_time();

@@ -135,19 +135,34 @@ pub(crate) struct Window {
     window_margin: RectOffset,
 }
 
+/// Configuration for creating a new window
+#[derive(Debug, Clone)]
+pub(crate) struct WindowConfig {
+    pub position: Vec2,
+    pub size: Vec2,
+    pub title_height: f32,
+    pub window_margin: RectOffset,
+    pub margin: f32,
+    pub movable: bool,
+    pub force_focus: bool,
+}
+
 impl Window {
     pub fn new(
         id: Id,
         parent: Option<Id>,
-        position: Vec2,
-        size: Vec2,
-        title_height: f32,
-        window_margin: RectOffset,
-        margin: f32,
-        movable: bool,
-        force_focus: bool,
+        config: WindowConfig,
         atlas: Arc<Mutex<Atlas>>,
     ) -> Window {
+        let WindowConfig {
+            position,
+            size,
+            title_height,
+            window_margin,
+            margin,
+            movable,
+            force_focus,
+        } = config;
         Window {
             id,
             position,
@@ -484,7 +499,7 @@ impl<'a> WindowContext<'a> {
             scroll.dragging_y = true;
             scroll.initial_scroll.y = scroll.rect.y - self.input.mouse_position.y * k;
         }
-        if scroll.dragging_y && self.input.is_mouse_down == false {
+        if scroll.dragging_y && !self.input.is_mouse_down {
             self.input.cursor_grabbed = false;
             scroll.dragging_y = false;
         }
@@ -524,7 +539,7 @@ impl<'a> WindowContext<'a> {
 
     pub fn input_focused(&self, id: Id) -> bool {
         self.input_focus
-            .map_or(false, |input_focus| input_focus == id)
+            .is_some_and(|input_focus| input_focus == id)
     }
 }
 
@@ -551,7 +566,7 @@ impl InputHandler for Ui {
         for (n, window) in self.windows_focus_order.iter().enumerate() {
             let window = &self.windows[window];
 
-            if window.was_active == false {
+            if !window.was_active {
                 continue;
             }
 
@@ -679,13 +694,15 @@ impl Ui {
                 let mut window = Window::new(
                     0,
                     None,
-                    Vec2::new(0., 0.),
-                    Vec2::new(screen_width, screen_height),
-                    0.0,
-                    RectOffset::new(0.0, 0.0, 0.0, 0.0),
-                    0.0,
-                    false,
-                    true,
+                    WindowConfig {
+                        position: Vec2::new(0., 0.),
+                        size: Vec2::new(screen_width, screen_height),
+                        title_height: 0.0,
+                        window_margin: RectOffset::new(0.0, 0.0, 0.0, 0.0),
+                        margin: 0.0,
+                        movable: false,
+                        force_focus: true,
+                    },
                     atlas.clone(),
                 );
                 window.active = true;
@@ -734,7 +751,7 @@ impl Ui {
         size: Vec2,
         titlebar: bool,
         movable: bool,
-    ) -> WindowContext {
+    ) -> WindowContext<'_> {
         if parent.is_some() {
             self.child_window_stack
                 .push(self.active_window.unwrap_or(0));
@@ -762,7 +779,7 @@ impl Ui {
             Some(parent) => self
                 .windows
                 .get(&parent)
-                .map_or(false, |window| window.force_focus),
+                .is_some_and(|window| window.force_focus),
             _ => false,
         };
         let parent_clip_rect = if let Some(parent) = parent {
@@ -781,13 +798,15 @@ impl Ui {
             Window::new(
                 id,
                 parent,
-                position,
-                size,
-                title_height,
-                margin_window,
-                margin,
-                movable,
-                parent_force_focus,
+                WindowConfig {
+                    position,
+                    size,
+                    title_height,
+                    window_margin: margin_window,
+                    margin,
+                    movable,
+                    force_focus: parent_force_focus,
+                },
                 atlas,
             )
         });
@@ -824,7 +843,7 @@ impl Ui {
         }
     }
 
-    pub(crate) fn begin_modal(&mut self, id: Id, position: Vec2, size: Vec2) -> WindowContext {
+    pub(crate) fn begin_modal(&mut self, id: Id, position: Vec2, size: Vec2) -> WindowContext<'_> {
         self.input.window_active = true;
         self.in_modal = true;
 
@@ -834,13 +853,15 @@ impl Ui {
             Window::new(
                 id,
                 None,
-                position,
-                size,
-                0.0,
-                RectOffset::new(0.0, 0.0, 0.0, 0.0),
-                0.0,
-                false,
-                true,
+                WindowConfig {
+                    position,
+                    size,
+                    title_height: 0.0,
+                    window_margin: RectOffset::new(0.0, 0.0, 0.0, 0.0),
+                    margin: 0.0,
+                    movable: false,
+                    force_focus: true,
+                },
                 atlas,
             )
         });
@@ -881,9 +902,9 @@ impl Ui {
         self.input.window_active = self.is_input_hovered(self.active_window.unwrap_or(0));
     }
 
-    pub(crate) fn get_active_window_context(&mut self) -> WindowContext {
+    pub(crate) fn get_active_window_context(&mut self) -> WindowContext<'_> {
         let focused;
-        let window = if self.in_modal == false {
+        let window = if !self.in_modal {
             match self.active_window {
                 None | Some(0) => {
                     focused = true;
@@ -977,7 +998,7 @@ impl Ui {
     pub fn is_mouse_over(&self, mouse_position: Vec2) -> bool {
         for window in self.windows_focus_order.iter() {
             let window = &self.windows[window];
-            if window.was_active == false {
+            if !window.was_active {
                 continue;
             }
             if window.full_rect().contains(mouse_position) {
@@ -985,17 +1006,15 @@ impl Ui {
             }
         }
         if let Some(window) = &self.modal {
-            if window.was_active {
-                if window.full_rect().contains(mouse_position) {
-                    return true;
-                }
+            if window.was_active && window.full_rect().contains(mouse_position) {
+                return true;
             }
         }
         false
     }
 
     pub fn active_window_focused(&self) -> bool {
-        self.active_window.map_or(false, |wnd| self.is_focused(wnd))
+        self.active_window.is_some_and(|wnd| self.is_focused(wnd))
     }
 
     pub const fn is_dragging(&self) -> bool {
@@ -1021,8 +1040,8 @@ impl Ui {
             true
         } else {
             self.child_window_stack
-                .get(0)
-                .map_or(false, |root| *root == self.hovered_window)
+                .first()
+                .is_some_and(|root| *root == self.hovered_window)
         }
     }
 
@@ -1030,7 +1049,7 @@ impl Ui {
         if self
             .windows
             .get(&id)
-            .map_or(false, |window| window.force_focus)
+            .is_some_and(|window| window.force_focus)
         {
             return true;
         }
@@ -1043,7 +1062,7 @@ impl Ui {
             if id == *focused_window {
                 return true;
             }
-            if let Some(parent) = self.child_window_stack.get(0) {
+            if let Some(parent) = self.child_window_stack.first() {
                 return *parent == *focused_window;
             }
         }
@@ -1072,7 +1091,7 @@ impl Ui {
 
         self.key_repeat.new_frame(self.time);
 
-        for (_, window) in &mut self.windows {
+        for window in self.windows.values_mut() {
             window.painter.clear();
             window.cursor.reset();
             window.was_active = window.active;
@@ -1157,7 +1176,7 @@ impl Ui {
         context.window.same_line(x);
     }
 
-    pub fn canvas(&mut self) -> DrawCanvas {
+    pub fn canvas(&mut self) -> DrawCanvas<'_> {
         let context = self.get_active_window_context();
 
         DrawCanvas { context }
@@ -1238,7 +1257,7 @@ pub(crate) mod ui_context {
             let ctrl = is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
 
             while let Some(c) = get_char_pressed_ui() {
-                if ctrl == false {
+                if !ctrl {
                     ui.char_event(c, false, false);
                 }
             }
@@ -1363,7 +1382,7 @@ pub(crate) mod ui_context {
         }
     }
 
-    const VERTEX_SHADER: &'static str = "#version 100
+    const VERTEX_SHADER: &str = "#version 100
 attribute vec3 position;
 attribute vec4 color0;
 attribute vec2 texcoord;
@@ -1381,7 +1400,7 @@ void main() {
     color = color0 / 255.0;
 }
 ";
-    const FRAGMENT_SHADER: &'static str = "#version 100
+    const FRAGMENT_SHADER: &str = "#version 100
 varying lowp vec2 uv;
 varying lowp vec4 color;
 
